@@ -1,0 +1,3 @@
+[submodule "goprowifihack"]
+	path = goprowifihack
+	url = https://github.com/KonradIT/goprowifihack.git

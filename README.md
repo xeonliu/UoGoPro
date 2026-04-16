@@ -2,6 +2,10 @@
 
 Kotlin Android app for controlling GoPro cameras over Wi-Fi. The first target is GoPro HERO4 Black/Silver using the HTTP API documented in the `goprowifihack` submodule.
 
+| Connect                                    | Control                                       | Settings                                        |
+|--------------------------------------------|-----------------------------------------------|-------------------------------------------------|
+| ![UoGoPro Home Screen](assets/connect.jpg) | ![UoGoPro Control Screen](assets/control.jpg) | ![UoGoPro Settings Screen](assets/settings.jpg) |
+
 ## Current Scope
 
 - HERO4 Black/Silver status polling from `http://10.5.5.9/gp/gpControl/status`.

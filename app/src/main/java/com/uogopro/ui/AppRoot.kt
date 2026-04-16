@@ -44,7 +44,6 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -54,14 +53,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.media3.common.MediaItem
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.PlayerView
 import androidx.compose.ui.unit.dp
 import com.uogopro.domain.CameraModel
 import com.uogopro.domain.CameraState
@@ -308,7 +303,7 @@ private fun PreviewPanel(
         ) {
             Button(
                 onClick = viewModel::startPreview,
-                enabled = !uiState.busy && !uiState.previewActive,
+                enabled = !uiState.busy && !uiState.previewActive && !uiState.previewProbe.active,
                 modifier = Modifier.weight(1f),
             ) {
                 Text("Start Preview")
@@ -321,6 +316,26 @@ private fun PreviewPanel(
                 Text("Stop")
             }
         }
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            ElevatedButton(
+                onClick = viewModel::startPreviewProbe,
+                enabled = !uiState.busy && !uiState.previewActive && !uiState.previewProbe.active,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text("Start Probe")
+            }
+            ElevatedButton(
+                onClick = viewModel::stopPreviewProbe,
+                enabled = !uiState.busy && uiState.previewProbe.active,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text("Stop Probe")
+            }
+        }
         if (uiState.previewActive) {
             Spacer(modifier = Modifier.height(8.dp))
             Text(
@@ -328,6 +343,22 @@ private fun PreviewPanel(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.64f),
             )
+        }
+        if (uiState.previewProbe.active || uiState.previewProbe.totalPackets > 0 || uiState.previewProbe.lastError != null) {
+            Spacer(modifier = Modifier.height(12.dp))
+            InfoRow("Probe", if (uiState.previewProbe.active) "Listening on UDP 8554" else "Stopped")
+            InfoRow("Packets/sec", uiState.previewProbe.packetsPerSecond.toString())
+            InfoRow("KB/sec", "%.1f".format(uiState.previewProbe.bytesPerSecond / 1024.0))
+            InfoRow("Total packets", uiState.previewProbe.totalPackets.toString())
+            InfoRow("Total MB", "%.2f".format(uiState.previewProbe.totalBytes / 1024.0 / 1024.0))
+            uiState.previewProbe.lastError?.let { error ->
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = error,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
         }
     }
 }
@@ -337,31 +368,13 @@ private fun GoProPreviewPlayer(
     uri: String,
     modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
-    val player = remember(uri) {
-        ExoPlayer.Builder(context).build().apply {
-            setMediaItem(MediaItem.fromUri(uri))
-            playWhenReady = true
-            prepare()
-        }
-    }
-
-    DisposableEffect(player) {
-        onDispose {
-            player.release()
-        }
-    }
-
     AndroidView(
         modifier = modifier,
-        factory = { viewContext ->
-            PlayerView(viewContext).apply {
-                useController = false
-                this.player = player
+        factory = { viewContext -> FfmpegPreviewSurfaceView(viewContext).apply { start(uri) } },
+        update = { view ->
+            if (view.streamUri != uri) {
+                view.start(uri)
             }
-        },
-        update = { playerView ->
-            playerView.player = player
         },
     )
 }

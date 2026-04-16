@@ -8,6 +8,13 @@ import com.uogopro.domain.IsoLimit
 import com.uogopro.domain.Sharpness
 import com.uogopro.domain.VideoResolution
 import com.uogopro.domain.WhiteBalance
+import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.InetAddress
+import java.net.SocketTimeoutException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 
 class GoProRepository(
     private val httpClient: GoProHttpClient = GoProHttpClient(),
@@ -30,10 +37,50 @@ class GoProRepository(
     suspend fun tagMoment(host: String) = command(host, Hero4CommandCatalog.TAG_MOMENT)
     suspend fun locate(host: String, enabled: Boolean) = command(host, if (enabled) Hero4CommandCatalog.LOCATE_ON else Hero4CommandCatalog.LOCATE_OFF)
     suspend fun powerOff(host: String) = command(host, Hero4CommandCatalog.POWER_OFF)
-    suspend fun startPreview(host: String) = command(host, Hero4CommandCatalog.LIVE_STREAM_START)
+    suspend fun startPreview(host: String) {
+        command(host, Hero4CommandCatalog.LIVE_STREAM_START)
+        command(host, Hero4CommandCatalog.LIVE_STREAM_RESTART)
+    }
     suspend fun stopPreview(host: String) = command(host, Hero4CommandCatalog.LIVE_STREAM_STOP)
 
-    fun previewUri(host: String): String = Hero4CommandCatalog.previewUri(host)
+    fun previewUri(): String = Hero4CommandCatalog.previewUri()
+
+    suspend fun sendPreviewKeepAlive(host: String) = withContext(Dispatchers.IO) {
+        val normalizedHost = host.trim()
+            .removePrefix("http://")
+            .removePrefix("https://")
+            .trimEnd('/')
+            .substringBefore(':')
+        val message = "_GPHD_:0:0:2:0.000000\n".toByteArray()
+        DatagramSocket().use { socket ->
+            val packet = DatagramPacket(
+                message,
+                message.size,
+                InetAddress.getByName(normalizedHost),
+                8554,
+            )
+            socket.send(packet)
+        }
+    }
+
+    suspend fun probePreviewPackets(
+        timeoutMillis: Int = 1_000,
+        onPacket: (bytes: Int) -> Unit,
+    ) = withContext(Dispatchers.IO) {
+        val buffer = ByteArray(64 * 1024)
+        DatagramSocket(8554).use { socket ->
+            socket.soTimeout = timeoutMillis
+            while (isActive) {
+                try {
+                    val packet = DatagramPacket(buffer, buffer.size)
+                    socket.receive(packet)
+                    onPacket(packet.length)
+                } catch (_: SocketTimeoutException) {
+                    onPacket(0)
+                }
+            }
+        }
+    }
 
     suspend fun setVideoResolution(host: String, value: VideoResolution) = command(host, Hero4CommandCatalog.videoResolution(value))
     suspend fun setFrameRate(host: String, value: FrameRate) = command(host, Hero4CommandCatalog.frameRate(value))

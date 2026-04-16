@@ -20,6 +20,7 @@ object Hero4CommandCatalog {
     const val LOCATE_OFF = "/gp/gpControl/command/system/locate?p=0"
     const val POWER_OFF = "/gp/gpControl/command/system/sleep"
     const val LIVE_STREAM_START = "/gp/gpControl/execute?p1=gpStream&a1=proto_v2&c1=restart"
+    const val LIVE_STREAM_RESTART = "/gp/gpControl/execute?p1=gpStream&c1=restart"
     const val LIVE_STREAM_STOP = "/gp/gpControl/execute?p1=gpStream&c1=stop"
 
     fun mode(mode: CaptureMode): String = "/gp/gpControl/command/mode?p=${mode.code}"
@@ -41,14 +42,7 @@ object Hero4CommandCatalog {
     fun pairingStart(pin: String): String = "/gpPair?c=start&pin=$pin&mode=0"
     fun pairingFinish(pin: String): String = "/gpPair?c=finish&pin=$pin&mode=0"
 
-    fun previewUri(host: String): String {
-        val normalizedHost = host.trim()
-            .removePrefix("http://")
-            .removePrefix("https://")
-            .trimEnd('/')
-            .substringBefore(':')
-        return "udp://$normalizedHost:8554"
-    }
+    fun previewUri(): String = "udp://:8554"
 
     private fun setting(settingId: Int, value: Int): String =
         "/gp/gpControl/setting/$settingId/$value"

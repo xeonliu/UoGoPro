@@ -121,8 +121,15 @@ Live preview:
 
 ```text
 GET http://10.5.5.9/gp/gpControl/execute?p1=gpStream&a1=proto_v2&c1=restart
-udp://10.5.5.9:8554
+GET http://10.5.5.9/gp/gpControl/execute?p1=gpStream&c1=restart
+udp://@:8554
 GET http://10.5.5.9/gp/gpControl/execute?p1=gpStream&c1=stop
+```
+
+While preview is active, send this UDP keep-alive message to `10.5.5.9:8554` about every 2.5 seconds:
+
+```text
+_GPHD_:0:0:2:0.000000
 ```
 
 ## Important Status IDs

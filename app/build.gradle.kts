@@ -14,6 +14,10 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+
+        ndk {
+            abiFilters += "arm64-v8a"
+        }
     }
 
     buildTypes {
@@ -38,6 +42,20 @@ android {
     buildFeatures {
         compose = true
     }
+
+    packaging {
+        jniLibs {
+            excludes += "**/ffmpeg"
+            excludes += "**/ffprobe"
+        }
+        resources {
+            pickFirsts += "META-INF/native-image/**"
+            excludes += "lib/**/ffmpeg"
+            excludes += "lib/**/ffprobe"
+            excludes += "**/ffmpeg"
+            excludes += "**/ffprobe"
+        }
+    }
 }
 
 dependencies {
@@ -53,8 +71,9 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
-    implementation("androidx.media3:media3-exoplayer:1.4.1")
-    implementation("androidx.media3:media3-ui:1.4.1")
+    implementation("org.bytedeco:javacv:1.5.12")
+    implementation("org.bytedeco:javacpp:1.5.12:android-arm64")
+    implementation("org.bytedeco:ffmpeg:7.1.1-1.5.12:android-arm64")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

@@ -129,3 +129,33 @@ enum class EvCompensation(val id: Int, val label: String) {
         fun fromId(id: Int?): EvCompensation = entries.firstOrNull { it.id == id } ?: Zero
     }
 }
+
+data class StreamBitRate(
+    val id: Int,
+    val label: String,
+) {
+    companion object {
+        val K250 = StreamBitRate(250_000, "250 Kbps")
+        val K400 = StreamBitRate(400_000, "400 Kbps")
+        val K600 = StreamBitRate(600_000, "600 Kbps")
+        val K700 = StreamBitRate(700_000, "700 Kbps")
+        val K800 = StreamBitRate(800_000, "800 Kbps")
+        val M1 = StreamBitRate(1_000_000, "1 Mbps")
+        val M1_2 = StreamBitRate(1_200_000, "1.2 Mbps")
+        val M1_6 = StreamBitRate(1_600_000, "1.6 Mbps")
+        val M2 = StreamBitRate(2_000_000, "2 Mbps")
+        val M2_4 = StreamBitRate(2_400_000, "2.4 Mbps")
+
+        val all = listOf(K250, K400, K600, K700, K800, M1, M1_2, M1_6, M2, M2_4)
+    }
+}
+
+enum class StreamWindowSize(val id: Int, val label: String) {
+    Default(0, "Default"),
+    P240(1, "240"),
+    P240ThreeFour(2, "240 3:4"),
+    P240Half(3, "240 1:2"),
+    P480(4, "480"),
+    P480ThreeFour(5, "480 3:4"),
+    P480Half(6, "480 1:2");
+}

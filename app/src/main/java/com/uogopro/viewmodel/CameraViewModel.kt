@@ -12,7 +12,10 @@ import com.uogopro.domain.FieldOfView
 import com.uogopro.domain.FrameRate
 import com.uogopro.domain.Hero4Compatibility
 import com.uogopro.domain.IsoLimit
+import com.uogopro.domain.MediaFile
 import com.uogopro.domain.Sharpness
+import com.uogopro.domain.StreamBitRate
+import com.uogopro.domain.StreamWindowSize
 import com.uogopro.domain.VideoResolution
 import com.uogopro.domain.WhiteBalance
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,16 +25,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeout
-
-data class PreviewProbeState(
-    val active: Boolean = false,
-    val packetsPerSecond: Int = 0,
-    val bytesPerSecond: Long = 0,
-    val totalPackets: Long = 0,
-    val totalBytes: Long = 0,
-    val lastError: String? = null,
-)
 
 data class CameraUiState(
     val host: String = Hero4CommandCatalog.DEFAULT_HOST,
@@ -42,7 +35,11 @@ data class CameraUiState(
     val locating: Boolean = false,
     val previewActive: Boolean = false,
     val previewUri: String = "",
-    val previewProbe: PreviewProbeState = PreviewProbeState(),
+    val streamBitRate: StreamBitRate = StreamBitRate.M1,
+    val streamWindowSize: StreamWindowSize = StreamWindowSize.Default,
+    val mediaFiles: List<MediaFile> = emptyList(),
+    val mediaLoading: Boolean = false,
+    val selectedMediaIndex: Int? = null,
     val error: String? = null,
     val message: String? = null,
 )
@@ -53,7 +50,6 @@ class CameraViewModel(
     private val _uiState = MutableStateFlow(CameraUiState())
     val uiState: StateFlow<CameraUiState> = _uiState
     private var previewKeepAliveJob: Job? = null
-    private var previewProbeJob: Job? = null
 
     fun updateHost(host: String) {
         _uiState.update { it.copy(host = host, error = null, message = null) }
@@ -117,20 +113,19 @@ class CameraViewModel(
             stopPreviewKeepAlive()
             repository.stopPreview(currentHost())
         }
-        stopPreviewProbeInternal()
         repository.powerOff(currentHost())
         _uiState.update {
             it.copy(
                 cameraState = CameraState(),
                 previewActive = false,
                 previewUri = "",
-                previewProbe = PreviewProbeState(),
             )
         }
     }
 
     fun startPreview() = runCameraAction(successMessage = "Preview started") {
-        stopPreviewProbeInternal()
+        repository.setStreamBitRate(currentHost(), _uiState.value.streamBitRate)
+        repository.setStreamWindowSize(currentHost(), _uiState.value.streamWindowSize)
         _uiState.update {
             it.copy(
                 previewActive = true,
@@ -152,47 +147,51 @@ class CameraViewModel(
         refreshStateAfterCommand()
     }
 
-    fun startPreviewProbe() {
+    fun setStreamBitRate(value: StreamBitRate) = runCameraAction(successMessage = "Preview bitrate set to ${value.label}") {
+        _uiState.update { it.copy(streamBitRate = value) }
+        repository.setStreamBitRate(currentHost(), value)
+        restartPreviewIfActive()
+    }
+
+    fun setStreamWindowSize(value: StreamWindowSize) = runCameraAction(successMessage = "Preview window set to ${value.label}") {
+        _uiState.update { it.copy(streamWindowSize = value) }
+        repository.setStreamWindowSize(currentHost(), value)
+        restartPreviewIfActive()
+    }
+
+    fun loadMedia() {
         viewModelScope.launch {
-            _uiState.update {
-                it.copy(
-                    busy = true,
-                    error = null,
-                    message = null,
-                    previewActive = false,
-                    previewUri = "",
-                    previewProbe = PreviewProbeState(active = true),
-                )
-            }
-            runCatching {
-                stopPreviewKeepAlive()
-                repository.startPreview(currentHost())
-                repository.sendPreviewKeepAlive(currentHost())
-                startPreviewKeepAlive()
-                startPreviewProbeInternal()
-                refreshStateAfterCommand()
-            }.onSuccess {
-                _uiState.update { it.copy(busy = false, message = "UDP probe started") }
-            }.onFailure { throwable ->
-                stopPreviewProbeInternal()
-                stopPreviewKeepAlive()
-                _uiState.update {
-                    it.copy(
-                        busy = false,
-                        previewProbe = it.previewProbe.copy(active = false, lastError = throwable.message),
-                        error = throwable.message ?: throwable.javaClass.simpleName,
-                    )
+            _uiState.update { it.copy(mediaLoading = true, error = null, message = null) }
+            runCatching { repository.getMediaFiles(currentHost()) }
+                .onSuccess { files ->
+                    _uiState.update {
+                        it.copy(
+                            mediaFiles = files,
+                            mediaLoading = false,
+                            selectedMediaIndex = it.selectedMediaIndex?.takeIf { index -> index in files.indices },
+                            message = "Loaded ${files.size} media files",
+                        )
+                    }
                 }
-            }
+                .onFailure { throwable ->
+                    _uiState.update {
+                        it.copy(
+                            mediaLoading = false,
+                            error = throwable.message ?: throwable.javaClass.simpleName,
+                        )
+                    }
+                }
         }
     }
 
-    fun stopPreviewProbe() = runCameraAction(successMessage = "UDP probe stopped") {
-        stopPreviewProbeInternal()
-        stopPreviewKeepAlive()
-        repository.stopPreview(currentHost())
-        _uiState.update { it.copy(previewProbe = it.previewProbe.copy(active = false)) }
-        refreshStateAfterCommand()
+    fun openMedia(index: Int) {
+        _uiState.update {
+            it.copy(selectedMediaIndex = index.takeIf { selected -> selected in it.mediaFiles.indices })
+        }
+    }
+
+    fun closeMedia() {
+        _uiState.update { it.copy(selectedMediaIndex = null) }
     }
 
     fun setResolution(resolution: VideoResolution) = runCameraAction(successMessage = "Resolution set to ${resolution.label}") {
@@ -274,6 +273,13 @@ class CameraViewModel(
         _uiState.update { it.copy(cameraState = state) }
     }
 
+    private suspend fun restartPreviewIfActive() {
+        if (_uiState.value.previewActive) {
+            repository.restartPreview(currentHost())
+            repository.sendPreviewKeepAlive(currentHost())
+        }
+    }
+
     private fun currentHost(): String = _uiState.value.host.ifBlank { Hero4CommandCatalog.DEFAULT_HOST }
 
     private fun Boolean.onOff(): String = if (this) "on" else "off"
@@ -293,69 +299,8 @@ class CameraViewModel(
         previewKeepAliveJob = null
     }
 
-    private fun startPreviewProbeInternal() {
-        previewProbeJob?.cancel()
-        previewProbeJob = viewModelScope.launch {
-            var currentPackets = 0
-            var currentBytes = 0L
-            var totalPackets = 0L
-            var totalBytes = 0L
-            var lastUpdateMillis = System.currentTimeMillis()
-
-            runCatching {
-                repository.probePreviewPackets { bytes ->
-                    if (bytes > 0) {
-                        currentPackets += 1
-                        currentBytes += bytes.toLong()
-                        totalPackets += 1
-                        totalBytes += bytes.toLong()
-                    }
-
-                    val now = System.currentTimeMillis()
-                    if (now - lastUpdateMillis >= 1_000) {
-                        _uiState.update {
-                            it.copy(
-                                previewProbe = it.previewProbe.copy(
-                                    active = true,
-                                    packetsPerSecond = currentPackets,
-                                    bytesPerSecond = currentBytes,
-                                    totalPackets = totalPackets,
-                                    totalBytes = totalBytes,
-                                    lastError = null,
-                                ),
-                            )
-                        }
-                        currentPackets = 0
-                        currentBytes = 0
-                        lastUpdateMillis = now
-                    }
-                }
-            }.onFailure { throwable ->
-                if (isActive) {
-                    _uiState.update {
-                        it.copy(
-                            previewProbe = it.previewProbe.copy(
-                                active = false,
-                                lastError = throwable.message ?: throwable.javaClass.simpleName,
-                            ),
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    private fun stopPreviewProbeInternal() {
-        previewProbeJob?.cancel()
-        previewProbeJob = null
-        _uiState.update {
-            it.copy(previewProbe = it.previewProbe.copy(active = false))
-        }
-    }
-
     override fun onCleared() {
         stopPreviewKeepAlive()
-        stopPreviewProbeInternal()
         super.onCleared()
     }
 }

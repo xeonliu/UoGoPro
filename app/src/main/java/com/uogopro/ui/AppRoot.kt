@@ -1,5 +1,10 @@
 package com.uogopro.ui
 
+import android.app.DownloadManager
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Environment
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -10,12 +15,26 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Wifi
@@ -28,6 +47,7 @@ import androidx.compose.material3.ElevatedButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -44,6 +64,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -52,12 +73,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.unit.dp
+import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
+import com.github.panpf.sketch.AsyncImage
 import com.uogopro.domain.CameraModel
 import com.uogopro.domain.CameraState
 import com.uogopro.domain.CaptureMode
@@ -65,7 +92,11 @@ import com.uogopro.domain.EvCompensation
 import com.uogopro.domain.FieldOfView
 import com.uogopro.domain.Hero4Compatibility
 import com.uogopro.domain.IsoLimit
+import com.uogopro.domain.MediaFile
+import com.uogopro.domain.MediaType
 import com.uogopro.domain.Sharpness
+import com.uogopro.domain.StreamBitRate
+import com.uogopro.domain.StreamWindowSize
 import com.uogopro.domain.WhiteBalance
 import com.uogopro.viewmodel.CameraUiState
 import com.uogopro.viewmodel.CameraViewModel
@@ -73,6 +104,7 @@ import com.uogopro.viewmodel.CameraViewModel
 private enum class AppTab(val label: String, val icon: ImageVector) {
     Connection("Connect", Icons.Default.Wifi),
     Control("Control", Icons.Default.Videocam),
+    Media("Media", Icons.Default.PhotoLibrary),
     Settings("Settings", Icons.Default.Settings),
 }
 
@@ -114,6 +146,7 @@ fun AppRoot(viewModel: CameraViewModel) {
                 when (selectedTab) {
                     AppTab.Connection -> ConnectionScreen(uiState, viewModel)
                     AppTab.Control -> ControlScreen(uiState, viewModel)
+                    AppTab.Media -> MediaScreen(uiState, viewModel)
                     AppTab.Settings -> SettingsScreen(uiState, viewModel)
                 }
             }
@@ -303,7 +336,7 @@ private fun PreviewPanel(
         ) {
             Button(
                 onClick = viewModel::startPreview,
-                enabled = !uiState.busy && !uiState.previewActive && !uiState.previewProbe.active,
+                enabled = !uiState.busy && !uiState.previewActive,
                 modifier = Modifier.weight(1f),
             ) {
                 Text("Start Preview")
@@ -317,25 +350,23 @@ private fun PreviewPanel(
             }
         }
         Spacer(modifier = Modifier.height(12.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            ElevatedButton(
-                onClick = viewModel::startPreviewProbe,
-                enabled = !uiState.busy && !uiState.previewActive && !uiState.previewProbe.active,
-                modifier = Modifier.weight(1f),
-            ) {
-                Text("Start Probe")
-            }
-            ElevatedButton(
-                onClick = viewModel::stopPreviewProbe,
-                enabled = !uiState.busy && uiState.previewProbe.active,
-                modifier = Modifier.weight(1f),
-            ) {
-                Text("Stop Probe")
-            }
-        }
+        OptionMenu(
+            label = "BitRate",
+            selected = uiState.streamBitRate,
+            options = StreamBitRate.all,
+            optionLabel = { it.label },
+            onSelected = viewModel::setStreamBitRate,
+            enabled = !uiState.busy,
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        OptionMenu(
+            label = "WindowSize",
+            selected = uiState.streamWindowSize,
+            options = StreamWindowSize.entries.toList(),
+            optionLabel = { it.label },
+            onSelected = viewModel::setStreamWindowSize,
+            enabled = !uiState.busy,
+        )
         if (uiState.previewActive) {
             Spacer(modifier = Modifier.height(8.dp))
             Text(
@@ -343,22 +374,6 @@ private fun PreviewPanel(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.64f),
             )
-        }
-        if (uiState.previewProbe.active || uiState.previewProbe.totalPackets > 0 || uiState.previewProbe.lastError != null) {
-            Spacer(modifier = Modifier.height(12.dp))
-            InfoRow("Probe", if (uiState.previewProbe.active) "Listening on UDP 8554" else "Stopped")
-            InfoRow("Packets/sec", uiState.previewProbe.packetsPerSecond.toString())
-            InfoRow("KB/sec", "%.1f".format(uiState.previewProbe.bytesPerSecond / 1024.0))
-            InfoRow("Total packets", uiState.previewProbe.totalPackets.toString())
-            InfoRow("Total MB", "%.2f".format(uiState.previewProbe.totalBytes / 1024.0 / 1024.0))
-            uiState.previewProbe.lastError?.let { error ->
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = error,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
         }
     }
 }
@@ -374,6 +389,240 @@ private fun GoProPreviewPlayer(
         update = { view ->
             if (view.streamUri != uri) {
                 view.start(uri)
+            }
+        },
+    )
+}
+
+@Composable
+private fun MediaScreen(
+    uiState: CameraUiState,
+    viewModel: CameraViewModel,
+) {
+    LaunchedEffect(uiState.host) {
+        if (uiState.mediaFiles.isEmpty() && !uiState.mediaLoading) {
+            viewModel.loadMedia()
+        }
+    }
+
+    val selectedIndex = uiState.selectedMediaIndex
+    if (selectedIndex != null && selectedIndex in uiState.mediaFiles.indices) {
+        MediaDetailScreen(
+            files = uiState.mediaFiles,
+            selectedIndex = selectedIndex,
+            onBack = viewModel::closeMedia,
+        )
+    } else {
+        MediaGridScreen(uiState, viewModel)
+    }
+}
+
+@Composable
+private fun MediaGridScreen(
+    uiState: CameraUiState,
+    viewModel: CameraViewModel,
+) {
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(minSize = 112.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            Header(
+                title = "Media",
+                subtitle = "Original JPG and MP4 files from the HERO4 SD card",
+            )
+        }
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Button(
+                    onClick = viewModel::loadMedia,
+                    enabled = !uiState.mediaLoading,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(if (uiState.mediaLoading) "Loading" else "Refresh Media")
+                }
+                Text(
+                    text = "${uiState.mediaFiles.size} files",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                )
+            }
+        }
+        itemsIndexed(uiState.mediaFiles) { index, file ->
+            MediaGridTile(
+                file = file,
+                onClick = { viewModel.openMedia(index) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun MediaDetailScreen(
+    files: List<MediaFile>,
+    selectedIndex: Int,
+    onBack: () -> Unit,
+) {
+    val pagerState = rememberPagerState(
+        initialPage = selectedIndex.coerceIn(files.indices),
+        pageCount = { files.size },
+    )
+
+    LaunchedEffect(selectedIndex, files.size) {
+        if (selectedIndex in files.indices) {
+            pagerState.scrollToPage(selectedIndex)
+        }
+    }
+    val context = LocalContext.current
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        val currentFile = files[pagerState.currentPage.coerceIn(files.indices)]
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f),
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                }
+                Column {
+                    Text(currentFile.name, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        text = "${pagerState.currentPage + 1} / ${files.size}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                    )
+                }
+            }
+            IconButton(onClick = { downloadMedia(context, currentFile) }) {
+                Icon(Icons.Default.Download, contentDescription = "Download")
+            }
+            IconButton(onClick = { shareMedia(context, currentFile) }) {
+                Icon(Icons.Default.Share, contentDescription = "Share")
+            }
+        }
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+        ) { page ->
+            MediaPage(files[page])
+        }
+        Text(
+            text = currentFile.path,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+        )
+    }
+}
+
+@Composable
+private fun MediaGridTile(
+    file: MediaFile,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick),
+    ) {
+        when (file.type) {
+            MediaType.Photo -> AsyncImage(
+                uri = file.sourceUrl,
+                contentDescription = file.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+            MediaType.Video -> Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+                modifier = Modifier.fillMaxSize(),
+                shape = RoundedCornerShape(8.dp),
+            ) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+        }
+        Text(
+            text = file.name,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onPrimary,
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(8.dp),
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun MediaPage(file: MediaFile) {
+    when (file.type) {
+        MediaType.Photo -> AsyncImage(
+            uri = file.sourceUrl,
+            contentDescription = file.name,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.fillMaxSize(),
+        )
+        MediaType.Video -> OriginalVideoPlayer(
+            uri = file.sourceUrl,
+            modifier = Modifier.fillMaxSize(),
+        )
+    }
+}
+
+@Composable
+private fun OriginalVideoPlayer(
+    uri: String,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    val player = remember(uri) {
+        ExoPlayer.Builder(context).build().apply {
+            setMediaItem(MediaItem.fromUri(uri))
+            prepare()
+        }
+    }
+
+    DisposableEffect(player) {
+        onDispose { player.release() }
+    }
+
+    AndroidView(
+        modifier = modifier,
+        factory = { viewContext ->
+            PlayerView(viewContext).apply {
+                this.player = player
+                useController = true
+            }
+        },
+        update = { view ->
+            if (view.player !== player) {
+                view.player = player
             }
         },
     )
@@ -571,10 +820,12 @@ private fun <T> OptionMenu(
     options: List<T>,
     optionLabel: (T) -> String,
     onSelected: (T) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     var expanded by remember { mutableStateOf(false) }
 
-    Column {
+    Column(modifier = modifier) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelLarge,
@@ -583,6 +834,7 @@ private fun <T> OptionMenu(
         Spacer(modifier = Modifier.height(6.dp))
         FilledTonalButton(
             onClick = { expanded = true },
+            enabled = enabled,
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(
@@ -592,7 +844,7 @@ private fun <T> OptionMenu(
             Text("Change")
         }
         DropdownMenu(
-            expanded = expanded,
+            expanded = expanded && enabled,
             onDismissRequest = { expanded = false },
         ) {
             options.forEach { option ->
@@ -622,6 +874,32 @@ private fun formatSeconds(totalSeconds: Int): String {
 }
 
 private fun formatBytes(bytes: Long): String {
-    val gib = bytes / 1024.0 / 1024.0 / 1024.0
-    return "%.1f GB".format(gib)
+    val kib = bytes / 1024.0
+    val mib = kib / 1024.0
+    val gib = mib / 1024.0
+    return when {
+        gib >= 1.0 -> "%.1f GB".format(gib)
+        mib >= 1.0 -> "%.1f MB".format(mib)
+        kib >= 1.0 -> "%.1f KB".format(kib)
+        else -> "$bytes B"
+    }
+}
+
+private fun downloadMedia(context: Context, file: MediaFile) {
+    val request = DownloadManager.Request(Uri.parse(file.sourceUrl))
+        .setTitle(file.name)
+        .setDescription(file.path)
+        .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+        .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, file.name)
+    val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+    manager.enqueue(request)
+}
+
+private fun shareMedia(context: Context, file: MediaFile) {
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_SUBJECT, file.name)
+        putExtra(Intent.EXTRA_TEXT, file.sourceUrl)
+    }
+    context.startActivity(Intent.createChooser(intent, "Share ${file.name}"))
 }

@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.clickable
+import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
@@ -407,6 +408,7 @@ private fun MediaScreen(
 
     val selectedIndex = uiState.selectedMediaIndex
     if (selectedIndex != null && selectedIndex in uiState.mediaFiles.indices) {
+        BackHandler(onBack = viewModel::closeMedia)
         MediaDetailScreen(
             files = uiState.mediaFiles,
             selectedIndex = selectedIndex,

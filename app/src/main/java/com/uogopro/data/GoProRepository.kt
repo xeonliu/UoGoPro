@@ -5,15 +5,16 @@ import com.uogopro.domain.EvCompensation
 import com.uogopro.domain.FieldOfView
 import com.uogopro.domain.FrameRate
 import com.uogopro.domain.IsoLimit
+import com.uogopro.domain.MediaFile
 import com.uogopro.domain.Sharpness
+import com.uogopro.domain.StreamBitRate
+import com.uogopro.domain.StreamWindowSize
 import com.uogopro.domain.VideoResolution
 import com.uogopro.domain.WhiteBalance
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
-import java.net.SocketTimeoutException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 
 class GoProRepository(
@@ -21,6 +22,13 @@ class GoProRepository(
 ) {
     suspend fun getStatus(host: String) =
         Hero4StatusParser.parse(httpClient.get(host, Hero4CommandCatalog.STATUS))
+
+    suspend fun getMediaFiles(host: String): List<MediaFile> {
+        val body = httpClient.get(host, Hero4CommandCatalog.MEDIA_LIST, port = 8080)
+        return Hero4MediaParser.parse(body) { folder, name ->
+            httpClient.url(host, Hero4CommandCatalog.mediaFilePath(folder, name), port = 8080)
+        }
+    }
 
     suspend fun pair(host: String, pin: String) {
         val normalizedPin = pin.trim()
@@ -41,6 +49,7 @@ class GoProRepository(
         command(host, Hero4CommandCatalog.LIVE_STREAM_START)
         command(host, Hero4CommandCatalog.LIVE_STREAM_RESTART)
     }
+    suspend fun restartPreview(host: String) = command(host, Hero4CommandCatalog.LIVE_STREAM_RESTART)
     suspend fun stopPreview(host: String) = command(host, Hero4CommandCatalog.LIVE_STREAM_STOP)
 
     fun previewUri(): String = Hero4CommandCatalog.previewUri()
@@ -63,25 +72,6 @@ class GoProRepository(
         }
     }
 
-    suspend fun probePreviewPackets(
-        timeoutMillis: Int = 1_000,
-        onPacket: (bytes: Int) -> Unit,
-    ) = withContext(Dispatchers.IO) {
-        val buffer = ByteArray(64 * 1024)
-        DatagramSocket(8554).use { socket ->
-            socket.soTimeout = timeoutMillis
-            while (isActive) {
-                try {
-                    val packet = DatagramPacket(buffer, buffer.size)
-                    socket.receive(packet)
-                    onPacket(packet.length)
-                } catch (_: SocketTimeoutException) {
-                    onPacket(0)
-                }
-            }
-        }
-    }
-
     suspend fun setVideoResolution(host: String, value: VideoResolution) = command(host, Hero4CommandCatalog.videoResolution(value))
     suspend fun setFrameRate(host: String, value: FrameRate) = command(host, Hero4CommandCatalog.frameRate(value))
     suspend fun setFov(host: String, value: FieldOfView) = command(host, Hero4CommandCatalog.fov(value))
@@ -92,6 +82,8 @@ class GoProRepository(
     suspend fun setIsoLimit(host: String, value: IsoLimit) = command(host, Hero4CommandCatalog.isoLimit(value))
     suspend fun setSharpness(host: String, value: Sharpness) = command(host, Hero4CommandCatalog.sharpness(value))
     suspend fun setEvCompensation(host: String, value: EvCompensation) = command(host, Hero4CommandCatalog.evCompensation(value))
+    suspend fun setStreamBitRate(host: String, value: StreamBitRate) = command(host, Hero4CommandCatalog.streamBitRate(value))
+    suspend fun setStreamWindowSize(host: String, value: StreamWindowSize) = command(host, Hero4CommandCatalog.streamWindowSize(value))
 
     private suspend fun command(host: String, path: String) {
         httpClient.get(host, path)

@@ -15,8 +15,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 class GoProHttpClient {
-    suspend fun get(host: String, path: String, secure: Boolean = false): String = withContext(Dispatchers.IO) {
-        val normalizedHost = host.trim().removePrefix("http://").removePrefix("https://").trimEnd('/')
+    suspend fun get(
+        host: String,
+        path: String,
+        secure: Boolean = false,
+        port: Int? = null,
+    ): String = withContext(Dispatchers.IO) {
+        val normalizedHost = normalizeHost(host, port)
         val protocol = if (secure) "https" else "http"
         val url = URL("$protocol://$normalizedHost$path")
         val connection = (url.openConnection() as HttpURLConnection).apply {
@@ -44,6 +49,23 @@ class GoProHttpClient {
             body
         } finally {
             connection.disconnect()
+        }
+    }
+
+    fun url(host: String, path: String, secure: Boolean = false, port: Int? = null): String {
+        val protocol = if (secure) "https" else "http"
+        return "$protocol://${normalizeHost(host, port)}$path"
+    }
+
+    private fun normalizeHost(host: String, port: Int?): String {
+        val withoutProtocol = host.trim()
+            .removePrefix("http://")
+            .removePrefix("https://")
+            .trimEnd('/')
+        return if (port == null) {
+            withoutProtocol
+        } else {
+            "${withoutProtocol.substringBefore(':')}:$port"
         }
     }
 
